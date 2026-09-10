@@ -3,7 +3,7 @@ import axios from "axios";
 import { QRCodeSVG } from "qrcode.react";
 import "./App.css";
 
-const API_BASE = "http://127.0.0.1:8000";
+const API_BASE = import.meta.env.VITE_API_BASE ?? "";
 
 const api = axios.create({ baseURL: API_BASE });
 api.interceptors.request.use((config) => {
@@ -73,11 +73,11 @@ function LoginScreen({ onLogin }) {
         </div>
         <label>
           Username
-          <input type="text" value={username} onChange={(e) => setUsername(e.target.value)} autoFocus />
+          <input type="text" autoComplete="username" value={username} onChange={(e) => setUsername(e.target.value)} autoFocus />
         </label>
         <label>
           Password
-          <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
+          <input type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />
         </label>
         {error && <div className="login-error">{error}</div>}
         <button type="submit" className="regen-btn" disabled={loading}>
@@ -193,6 +193,12 @@ function App() {
     estimated_duration_hours: 2,
   });
 
+  useEffect(() => {
+    if (user?.role === "department") {
+      setNewTask((prev) => ({ ...prev, department: user.department }));
+    }
+  }, [user]);
+
   const fetchData = async () => {
     try {
       const [tasksRes, completedRes, weeklyRes, monthlyRes, metricsRes] = await Promise.all([
@@ -228,7 +234,6 @@ function App() {
     };
   }, [user]);
 
-  // Handle a QR-code scan landing: ?task=TASK001 in the URL auto-expands and scrolls to that task
   useEffect(() => {
     if (phase !== "dashboard") return;
     const params = new URLSearchParams(window.location.search);
@@ -289,9 +294,7 @@ function App() {
       formData.append("photo", file);
       if (lat) formData.append("lat", lat);
       if (lon) formData.append("lon", lon);
-      await api.post(`/tasks/${taskId}/complete`, formData, {
-        headers: { "Content-Type": "multipart/form-data" },
-      });
+      await api.post(`/tasks/${taskId}/complete`, formData);
       fetchData();
     } finally {
       setUploadingTaskId(null);
@@ -437,9 +440,8 @@ function App() {
           </thead>
           <tbody>
             {tasks.map((t) => (
-              <>
+              <Fragment key={t.task_id}>
                 <tr
-                  key={t.task_id}
                   ref={(el) => (taskRowRefs.current[t.task_id] = el)}
                   className="clickable-row"
                   onClick={() => setExpandedTaskId(expandedTaskId === t.task_id ? null : t.task_id)}
@@ -469,7 +471,7 @@ function App() {
                     </td>
                   </tr>
                 )}
-              </>
+              </Fragment>
             ))}
           </tbody>
         </table>
@@ -490,8 +492,8 @@ function App() {
           </thead>
           <tbody>
             {activeSchedule.map((b) => (
-              <>
-                <tr key={b.block_id} className="clickable-row" onClick={() => setExpandedBlockId(expandedBlockId === b.block_id ? null : b.block_id)}>
+              <Fragment key={b.block_id}>
+                <tr className="clickable-row" onClick={() => setExpandedBlockId(expandedBlockId === b.block_id ? null : b.block_id)}>
                   <td>{b.block_id}</td>
                   <td>{b.section_id}</td>
                   <td><span className={blockTagClass(b.block_type)}>{b.block_type}</span></td>
@@ -505,7 +507,7 @@ function App() {
                     </td>
                   </tr>
                 )}
-              </>
+              </Fragment>
             ))}
           </tbody>
         </table>

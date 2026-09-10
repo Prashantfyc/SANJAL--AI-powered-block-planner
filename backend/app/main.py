@@ -6,6 +6,7 @@ from datetime import datetime
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from typing import Optional
@@ -34,6 +35,28 @@ app.add_middleware(
 UPLOAD_DIR = os.path.join(os.path.dirname(__file__), "uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
+
+# Frontend static distribution path (unified deployment support)
+FRONTEND_DIST_DIR = os.environ.get(
+    "FRONTEND_DIST",
+    os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "frontend", "dist")),
+)
+if not os.path.isdir(FRONTEND_DIST_DIR):
+    alt_dist = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "dist"))
+    if os.path.isdir(alt_dist):
+        FRONTEND_DIST_DIR = alt_dist
+
+if os.path.isdir(FRONTEND_DIST_DIR):
+    assets_dir = os.path.join(FRONTEND_DIST_DIR, "assets")
+    if os.path.isdir(assets_dir):
+        app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
+
+# Auto-seed database if empty on startup
+try:
+    from seed import seed_data
+    seed_data()
+except Exception:
+    pass
 
 SECTIONS = generate_sections()
 WINDOWS = generate_candidate_windows(SECTIONS, days=30)
@@ -102,8 +125,17 @@ def login(form: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get
     }
 
 
+@app.get("/api/health")
+def api_health():
+    return {"status": "ok", "message": "Automatic Block Planning API is running"}
+
+
 @app.get("/")
 def root():
+    if os.path.isdir(FRONTEND_DIST_DIR):
+        index_file = os.path.join(FRONTEND_DIST_DIR, "index.html")
+        if os.path.isfile(index_file):
+            return FileResponse(index_file)
     return {"message": "Automatic Block Planning API is running"}
 
 
@@ -239,3 +271,20 @@ def regenerate_schedule(db: Session = Depends(get_db), user: UserDB = Depends(re
     weekly = optimize_schedule(ranked, weekly_windows, horizon="Weekly")
     monthly = optimize_schedule(ranked, WINDOWS, horizon="Monthly")
     return {"message": "Schedule regenerated", "weekly_blocks": len(weekly), "monthly_blocks": len(monthly)}
+
+
+@app.get("/{full_path:path}")
+async def serve_spa(full_path: str):
+    api_prefixes = ("tasks", "sections", "schedule", "metrics", "audit", "auth", "uploads", "docs", "openapi.json", "api")
+    if any(full_path == prefix or full_path.startswith(f"{prefix}/") for prefix in api_prefixes):
+        raise HTTPException(status_code=404, detail="Not found")
+
+    if os.path.isdir(FRONTEND_DIST_DIR):
+        file_path = os.path.join(FRONTEND_DIST_DIR, full_path)
+        if full_path and os.path.isfile(file_path):
+            return FileResponse(file_path)
+        index_file = os.path.join(FRONTEND_DIST_DIR, "index.html")
+        if os.path.isfile(index_file):
+            return FileResponse(index_file)
+
+    raise HTTPException(status_code=404, detail="Not found")
