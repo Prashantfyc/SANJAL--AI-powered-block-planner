@@ -1,9 +1,10 @@
 services:
   - type: web
     name: sanjal-block-planner
-    env: docker
+    env: python
     plan: free
     region: oregon
-    dockerfilePath: Dockerfile
+    buildCommand: "pip install -r requirements.txt && python backend/seed.py"
+    startCommand: "python start.py"
     healthCheckPath: /api/health
     autoDeploy: true
